@@ -5,19 +5,42 @@ import pandas as pd
 from prefect import flow, task
 from sklearn.model_selection import train_test_split
 
-from config import Location, ProcessConfig
+from config import JiraAccountParams, Location, ProcessConfig
+from jira_api import lmjira
 
 
 @task
-def get_raw_data(data_location: str):
+def get_raw_data(jquery: str, team_list: list[str] = []):
     """Read raw data
 
     Parameters
     ----------
-    data_location : str
-        The location of the raw data
+    jquery : str
+        jira query language similar to sql
+    team_list: list[str]
+        list of all active team that you want the data to be pulled.
+        if team_list is greater than 0, the jquery variable will be ignored
     """
-    return pd.read_csv(data_location)
+    temp_df = []
+    change_log = []
+    if len(team_list) != 0:
+        for team in team_list:
+            print(team)
+            data = lmjira(
+                f'"Team[Dropdown]" = "{team}" AND created >= 2023-01-01 order by created DESC',
+                5,
+            )  # project = LMS AND AND created >= -30d order by created DESC
+            data.multisearch()
+            data.df["team"] = team
+            temp_df.append(data.df)
+            change_log.append(data.changelog)
+        df = pd.concat(temp_df)
+        changelog = pd.concat(change_log)
+        return df, changelog
+    else:
+        data = lmjira(jquery, 5)
+        data.multisearch()
+        return data.df, data.changelog
 
 
 @task
@@ -92,6 +115,7 @@ def save_processed_data(data: dict, save_location: str):
 def process(
     location: Location = Location(),
     config: ProcessConfig = ProcessConfig(),
+    jiraparams: JiraAccountParams = JiraAccountParams(),
 ):
     """Flow to process the ata
 
@@ -102,11 +126,19 @@ def process(
     config : ProcessConfig, optional
         Configurations for processing data, by default ProcessConfig()
     """
-    data = get_raw_data(location.data_raw)
-    processed = drop_columns(data, config.drop_columns)
-    X, y = get_X_y(processed, config.label)
-    split_data = split_train_test(X, y, config.test_size)
-    save_processed_data(split_data, location.data_process)
+
+    # team = "this is a team variable"
+    # print(jiraparams.jquery)
+
+    data, changelog = get_raw_data(
+        jiraparams.sample_jquery, jiraparams.team_list
+    )
+    data.to_csv(location.data_raw + "raw_data.csv", index=False)
+    changelog.to_csv(location.data_raw + "raw_changelog.csv", index=False)
+    # processed = drop_columns(data, config.drop_columns)
+    # X, y = get_X_y(processed, config.label)
+    # split_data = split_train_test(X, y, config.test_size)
+    # save_processed_data(split_data, location.data_process)
 
 
 if __name__ == "__main__":

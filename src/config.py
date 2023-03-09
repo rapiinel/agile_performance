@@ -70,3 +70,13 @@ class JiraAccountParams(BaseModel):
     user: str = "raffie.navaluna@legalmatch.com"
     apikey: str = "ATATT3xFfGF0qWVjYCKxk31Tut32YsjIEvuyvD9nJu0nufnXZdkzvN9gsMWiZ7LrRdhnjAO1cmc5C2G5PtHb_t3FfXQrXjD4VQWhRk6E6GZalOmBAonnEUfv890pEiGCtqDT8OQwg_Ru5EVszuRRk3zIk7rvRdLxHqGq94RNyfclY3rDaXeV9gY=5E104671"
     server: str = "https://legalmatch.atlassian.net"
+    options: dict = {"server": server}
+    sample_jquery: str = 'project = LMS AND "Team[Dropdown]" = "Team 5 | Avatar" AND created >= -30d order by created DESC'
+    team_list: list[str] = [
+        "Team 1 | OnePiece",
+        "Team 2 | Astroboy",
+        "Team 3 | DesuNoto",
+        "Team 4 | SamuraiX",
+        "Team 5 | Avatar",
+        "Team AUT | Mojacko",
+    ]
