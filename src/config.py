@@ -80,3 +80,4 @@ class JiraAccountParams(BaseModel):
         "Team 5 | Avatar",
         "Team AUT | Mojacko",
     ]
+    date_columns: list[str] = ["created datetime"]

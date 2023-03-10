@@ -1,6 +1,9 @@
 """Python script to process the data"""
 
+import re
+
 import joblib
+import numpy as np
 import pandas as pd
 from prefect import flow, task
 from sklearn.model_selection import train_test_split
@@ -28,7 +31,7 @@ def get_raw_data(jquery: str, team_list: list[str] = []):
             print(team)
             data = lmjira(
                 f'"Team[Dropdown]" = "{team}" AND created >= 2023-01-01 order by created DESC',
-                5,
+                0,
             )  # project = LMS AND AND created >= -30d order by created DESC
             data.multisearch()
             data.df["team"] = team
@@ -44,6 +47,30 @@ def get_raw_data(jquery: str, team_list: list[str] = []):
 
 
 @task
+def datatype_todate(data: pd.DataFrame, columns: list):
+    """Convert date columns to datetime format in pandas"""
+    for column in columns:
+        data[column] = pd.to_datetime(data[column])
+        data[column] = [x.date() for x in data[column]]
+    return data
+
+
+def get_sprint(str_value):
+    str_value = str(str_value).lower()
+    if "." in str_value:
+        result = re.findall(r"sprint\d+.\d+|sprint \d+.\d+", str_value)
+    else:
+        result = re.findall(r"sprint \d+|sprint\d+", str_value)
+    if len(result) > 0:
+        result = result[0]
+        for value in ["sprint ", "sprint"]:
+            result = result.replace(value, "")
+        return "sprint " + result
+    else:
+        return np.nan
+
+
+@task
 def drop_columns(data: pd.DataFrame, columns: list):
     """Drop unimportant columns
 
@@ -55,6 +82,57 @@ def drop_columns(data: pd.DataFrame, columns: list):
         Columns to drop
     """
     return data.drop(columns=columns)
+
+
+def get_ticket_value(row: pd.Series):
+    """Tag tickets that was identified with value for the stakeholders"""
+    variables = [
+        "RCA - Issue Classification",
+        "RCA - Causing Ticket",
+        "Fix versions",
+        "Release Date (Actual)",
+        "Release Date (Estimated - Original)",
+        "Release Date (Estimated - Current)",
+    ]
+    if str(row["issue type"]) in ["Story", "Bug"]:
+        return 1
+    for variable in variables:
+        if str(row[variable]) != "None":
+            return 1
+        else:
+            return np.nan
+
+
+def get_status(row: pd.Series):
+    """Tag tickets that are complete in jira since it has multiple types"""
+    status_list = [
+        "Release Preparation",
+        "Pending Release",
+        "Closed",
+        "Post-Release Monitoring",
+        "Launched",
+        "Data gathering",
+        "Closed",
+        "Data Gathering",
+    ]
+    if str(row["status"]) in status_list:
+        return 1
+
+
+def get_bug(row: pd.Series):
+    """Tag critical bugs"""
+    bug_indicator = ["RCA - Issue Classification", "RCA - Causing Ticket"]
+    # major concern is post-release-bug #'existing-bug','enhancement','defect',
+    bug_status = ["post-release-bug"]
+    if str(row["RCA - Causing Ticket"]) != "None":
+        for bug in bug_indicator:
+            if str(row[bug]) != "None":
+                if str(row["RCA - Issue Classification"]) in bug_status:
+                    return 1
+            else:
+                return np.nan
+    else:
+        return np.nan
 
 
 @task
@@ -127,18 +205,23 @@ def process(
         Configurations for processing data, by default ProcessConfig()
     """
 
-    # team = "this is a team variable"
-    # print(jiraparams.jquery)
-
     data, changelog = get_raw_data(
         jiraparams.sample_jquery, jiraparams.team_list
     )
     data.to_csv(location.data_raw + "raw_data.csv", index=False)
     changelog.to_csv(location.data_raw + "raw_changelog.csv", index=False)
-    # processed = drop_columns(data, config.drop_columns)
-    # X, y = get_X_y(processed, config.label)
-    # split_data = split_train_test(X, y, config.test_size)
-    # save_processed_data(split_data, location.data_process)
+
+    data = data.explode("sprint").dropna(subset=["sprint"])
+    data = datatype_todate(data, jiraparams.date_columns)
+    data["sprint-cleaned"] = data.apply(
+        lambda x: get_sprint(x["sprint"]), axis=1
+    )
+    data["ticket with value?"] = data.apply(
+        lambda x: get_ticket_value(x), axis=1
+    )
+    data["ticket done?"] = data.apply(lambda x: get_status(x), axis=1)
+    data["ticket a bug?"] = data.apply(lambda x: get_bug(x), axis=1)
+    data.to_csv(location.data_process + "processed_data.csv", index=False)
 
 
 if __name__ == "__main__":
