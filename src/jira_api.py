@@ -4,20 +4,20 @@ from jira import JIRA
 
 from config import JiraAccountParams
 
-credentials = JiraAccountParams()
-
-
-options = {"server": credentials.server}
-
-jira = JIRA(options, basic_auth=(credentials.user, credentials.apikey))
+# options = {"server": credentials.server}
 
 
 class lmjira:
     def __init__(self, jquery, maxresult):
         """initialization"""
+        credentials = JiraAccountParams()
         self.jquery = jquery
         self.maxresult = maxresult
         self.changelog_list = []
+        self.jira = JIRA(
+            credentials.options,
+            basic_auth=(credentials.user, credentials.apikey),
+        )
 
     def multisearch(self):
         """search logic"""
@@ -40,12 +40,13 @@ class lmjira:
             "RCA - Causing Ticket": [],
             "Fix versions": [],
         }
-        issues = jira.search_issues(
+        issues = self.jira.search_issues(
             jql_str=self.jquery, maxResults=self.maxresult
         )
-        allfields = jira.fields()
+        allfields = self.jira.fields()
         self.nameMap = {
-            jira.field["name"]: jira.field["id"] for jira.field in allfields
+            self.jira.field["name"]: self.jira.field["id"]
+            for self.jira.field in allfields
         }
 
         for singleIssue in issues:
@@ -129,7 +130,7 @@ class lmjira:
     def get_changelog(self, key):
         """function to get the change log, change log in a different table. This function will be used in the multi search function"""
         issue_key = key
-        issue_jql = jira.issue(key, expand="changelog")
+        issue_jql = self.jira.issue(key, expand="changelog")
         changelog = issue_jql.changelog
         history_dict = {}
         df_list = []
